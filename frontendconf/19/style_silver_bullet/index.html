@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en-us">
+    <head>
+
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+		<title>
+				В поисках Стилевого Грааля &middot; Конспекты
+		</title>
+
+		
+  		<link rel="stylesheet" href="/conf/css/style.css">
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+		<link rel="stylesheet" href="/conf/custom.css">
+		
+		<link rel="icon" type="image/png" sizes="32x32" href="/conf/images/favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="/conf/images/favicon-16x16.png">
+		<link rel="apple-touch-icon" sizes="180x180" href="/conf/images/apple-touch-icon.png">
+
+		
+		<link href="" rel="alternate" type="application/rss+xml" title="Конспекты" />
+  
+  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-107215405-3"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'UA-107215405-3');
+  </script>
+
+	</head>
+
+    <body>
+        		<nav class="nav">
+			<div class="nav-container">
+				<a href="/conf/">
+					<h2 class="nav-title">Конспекты</h2>
+				</a>
+				<ul>
+    <li><a href="/conf/">Posts</a></li>
+</ul>
+
+			</div>
+		</nav>
+
+        
+
+<main>
+	<div class="post">
+		<div class="single__header">
+			<div class="post-info">
+        Артур Кенжаев, Яндекс.Маркет
+</div>
+
+			<h1 class="post-title">В поисках Стилевого Грааля</h1>
+<div class="post-line"></div>
+<div class="tag-block"><span class="catalogue-tags"><a href='/conf/tags/frontendconf' class="tags" >FrontendConf</a></span><span class="catalogue-tags"><a href='/conf/tags/2019' class="tags" >2019</a></span></div>
+
+		</div>
+
+		
+
+		<h2 id="прошлое">Прошлое</h2>
+<p>На заре интернета стили страницы считались статичными и декларативными, и начали появляться решения для подобной
+стилизации:</p>
+<ul>
+<li>tags: <!-- raw HTML omitted -->abc<!-- raw HTML omitted --></li>
+<li>JSSS: tags.H1.color</li>
+<li>CSS Expressions: expression(a+b)</li>
+<li>CSS!</li>
+</ul>
+<p>У CSS есть множество проблем: отсутствие реиспользования, неявность, неинтерактивность, сложность чтения.</p>
+<p>Потом начали появляться решения, которые пытались пофиксить CSS &ndash; например, БЭМ, который вводил новые сущности и
+абстракции, упрощающие стилизацию приложения. А потом bootstrap, shadow dom, webpack, component, css modules, &hellip;</p>
+<p>И проснулось дублирование!</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-html" data-lang="html">&lt;<span style="color:#f92672">button</span> <span style="color:#a6e22e">type</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;button&#34;</span> <span style="color:#a6e22e">class</span><span style="color:#f92672">=</span><span style="color:#e6db74">&#34;btn-cls&#34;</span>&gt;Button&lt;/<span style="color:#f92672">button</span>&gt;
+</code></pre></div><p>Хотя PostCSS и CSS Modules закрыли большинство вопросов, но остались вопросы:</p>
+<ul>
+<li>сборка</li>
+<li>семавнтика</li>
+<li>порого вхождения</li>
+<li>темизация</li>
+<li>tree shaking</li>
+<li>runtime стили</li>
+<li>универсальность</li>
+</ul>
+<h2 id="css-in-js">CSS-in-JS</h2>
+<p>И появился Styled Components, решающий кучу проблем:</p>
+<ul>
+<li>специфичность</li>
+<li>сборка</li>
+<li>семантика</li>
+<li>порог вхождения</li>
+<li>темизация</li>
+</ul>
+<p><strong>А есть недостатки?</strong></p>
+<p>Есть!</p>
+<ul>
+<li>Производительность, на больших компонентах это тормозит</li>
+<li>Можно (легко) написать отвратительный код</li>
+<li>Комбинаторика злая: 4 состояния по 3 значения и у нас гигантский блок кода с дублированием</li>
+<li>Извлечение статических стилей сложно и ненативно</li>
+<li>Язык императивен и if-ами писать около-декларативную вещь сложно</li>
+<li>Отсутствие контроля над внешним интерфейсом</li>
+<li>Отсутствия контроля над внутренним интерфейсом — непонятно как отделить пропсы от HTML аттрибутов</li>
+<li>Смешивание глобальных классов, styled components и всего остального</li>
+</ul>
+<p>В итоге, решая проблемы мы делаем новые проблемы и попадаем в новый замкнутый цикл проблем. Время посмотреть в
+прошлое и понять что было придумано раньше.</p>
+<h2 id="shadow-dom-и-высокоуровневые-абстракции">shadow dom и высокоуровневые абстракции</h2>
+<p>Одно из решений — reshadow, позволяет семантически абстрагироваться от HTML и стилей, и писать на высокоуровневые
+тегах, используя shadow dom и не думая о конкретных тегах и селекторах.</p>
+<p>Из-за особенностей рендеринга с reshadow (использование модфикаторов и css variables в корневых тегах компонентов),
+есть возможность вынести стили в отдельный файл.</p>
+<p>Как менять стили компонентов?</p>
+<ul>
+<li>модификация компонентов (изменение компонентов)</li>
+<li>темизация (декларативное определение различных тем)</li>
+<li>стилизация (прямая передача набора стилей)</li>
+</ul>
+<p>Т.к. reshadow позволяет вынести стили в пропсы компонента, то можно использовать стилизацию как интерфейс к
+компоненту и получить все преимущества этого подхода.</p>
+<h2 id="плюшки-от-reshadow">Плюшки от reshadow</h2>
+<ul>
+<li>вынос динамических вещей и экспериментов в чанки;</li>
+<li>core-компоненты не имеют прямых зависимиостей от других компонентов, не используют контекст;</li>
+<li>в контексте могут быть не только стили, но и любые значения;</li>
+<li>есть возможность переопределения render и lifecycle;</li>
+<li>производительность (из-за обработки стилей во время сборки);</li>
+<li>на выходе получается обычный HTML и CSS, который можно читать;</li>
+<li>возможность построить маппинг всех стилей и состояний;</li>
+<li>можно использовать вместе с PostCSS;</li>
+<li>фреймворк-агностик;</li>
+</ul>
+
+
+		
+	</div>
+
+	<div class="pagination">
+		<a href="/conf/highload/18/1.9-data-engineers/" class="left arrow">&#8592;</a>
+		<a href="/conf/highload/18/1.4-bd-k8s/" class="right arrow">&#8594;</a>
+
+		<a href="#" class="top">Top</a>
+	</div>
+</main>
+
+
+        		<footer>
+			<span>
+			&copy; <time datetime="2020-02-11 18:17:14.870561674 &#43;0700 &#43;07 m=&#43;0.090381725">2020</time> . Made with <a href='https://gohugo.io'>Hugo</a> using the <a href='https://github.com/EmielH/tale-hugo/'>Tale</a> theme.
+			</span>
+		</footer>
+
+    </body>
+</html>

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en-us">
+    <head>
+
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+		<title>
+				njs ‒ родной JavaSсript-скриптинг в nginx &middot; Конспекты
+		</title>
+
+		
+  		<link rel="stylesheet" href="/conf/css/style.css">
+		<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+		<link rel="stylesheet" href="/conf/custom.css">
+		
+		<link rel="icon" type="image/png" sizes="32x32" href="/conf/images/favicon-32x32.png">
+		<link rel="icon" type="image/png" sizes="16x16" href="/conf/images/favicon-16x16.png">
+		<link rel="apple-touch-icon" sizes="180x180" href="/conf/images/apple-touch-icon.png">
+
+		
+		<link href="" rel="alternate" type="application/rss+xml" title="Конспекты" />
+  
+  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-107215405-3"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'UA-107215405-3');
+  </script>
+
+	</head>
+
+    <body>
+        		<nav class="nav">
+			<div class="nav-container">
+				<a href="/conf/">
+					<h2 class="nav-title">Конспекты</h2>
+				</a>
+				<ul>
+    <li><a href="/conf/">Posts</a></li>
+</ul>
+
+			</div>
+		</nav>
+
+        
+
+<main>
+	<div class="post">
+		<div class="single__header">
+			<div class="post-info">
+        Дмитрий Волынцев, Nginx, Inc.
+</div>
+
+			<h1 class="post-title">njs ‒ родной JavaSсript-скриптинг в nginx</h1>
+<div class="post-line"></div>
+<div class="tag-block"><span class="catalogue-tags"><a href='/conf/tags/highload' class="tags" >Highload</a></span><span class="catalogue-tags"><a href='/conf/tags/2019' class="tags" >2019</a></span></div>
+
+		</div>
+
+		
+
+		<p>(модуль для создания переменных и обработчиков стадий запроса на JavaScript)</p>
+<h1 id="скриптинг-в-nginx">Скриптинг в nginx</h1>
+<p>Современный proxy-server уже умеет:</p>
+<ul>
+<li>балансировать нагрузку</li>
+<li>TLS-терминирование,</li>
+<li>отдавать статику,</li>
+<li>кешировать.</li>
+</ul>
+<p>Сервисы делятся на микросервисы.
+Теперь мы движемся от прокси к API-gateway.
+Теперь nginx умеет ещё и в авторизацию.</p>
+<p><img src="../../../images/highload19/njs-nginx-01.png" alt="njs-nginx 1"></p>
+<p>Авторизация средствами прокси: nginx проверяет специальный токен.</p>
+<ul>
+<li>Если токена нет, перенаправляет пользователя к identity provider.</li>
+<li>Если токен есть и это верный токен, то пользователь авторизован и получает доступ к сервисам.</li>
+</ul>
+<p>Выбор: либо реализовать логику авторизации самостоятельно на низкоуровневом языке, либо&hellip;?</p>
+<h2 id="что-не-так-с-openresty">Что не так с openresty?</h2>
+<p>Вот что:</p>
+<ul>
+<li>
+<p>Создаётся отдельной командой с другим подходом к философии разработки.
+Так, в nginx философия такая: все директивы — это кирпичики, которые хорошо сочетаются между собой.
+А в openresty директивы — это самостоятельные ad-hoc решения.
+Чтобы написать на нём своё решение, надо хорошо знать openresty.
+И ещё директивы могут не работать друг с другом.</p>
+</li>
+<li>
+<p>одна виртуальная машина на воркера (до 3Gb памяти на воркера).
+При этом у воркера могут быть десятки тысяч соединений в секунду.
+Если там появится нетривиальная логика, всё может упасть.</p>
+</li>
+<li>
+<p>язык Lua — это ограничение:</p>
+<ul>
+<li>узкая ниша;</li>
+<li>синтаксис своеобразный, индексация массивов с 1 (еретики!);</li>
+<li>язык не развивается.</li>
+</ul>
+</li>
+</ul>
+<h1 id="цели-проекта">Цели проекта</h1>
+<p>Хочется написать своё решение, в котором не будет недостатков openresty.
+Вот, что нам важно:</p>
+<ul>
+<li>Использовать популярный язык программирования.</li>
+<li>Быстрый и легковесный, nginx way.</li>
+<li>Безопасность и устойчивость.</li>
+</ul>
+<p>Выбрали JavaScript:</p>
+<ul>
+<li>Все знают JS, это современный lingua-franca.</li>
+<li>С-подобный синтаксис, который хорошо ложится на конфиги в nginx.</li>
+<li>Язык активно развивается, ежегодные релизы, заимствует хорошее из других языков.</li>
+<li>Модель языка хорошо ложится на архитектуру nginx.
+Чтобы обрабатывать десятки тысяч сообщений в секунду, нужен именно такой механизм.</li>
+</ul>
+<h1 id="интерпретатор-njs">Интерпретатор njs</h1>
+<p>Так, а зачем делать собственный интерпретатор?</p>
+<ul>
+<li>V8 и SpiderMonkey неэффективны для задач внутри nginx.</li>
+<li>Duktape предназначен для встраивания в другие процессы.
+Но он недостаточно быстро для nginx.
+И он реализует только стандарт языка ES5.1 (это примерно 2009 год).</li>
+<li>Свой интерпретатор может быть заточен под особенности окружения.</li>
+</ul>
+<h2 id="чем-njs-не-является">Чем njs не является</h2>
+<ul>
+<li>nginx + njs ≠ application server</li>
+<li>полноценной реализацией стандартов ECMAScript тоже не является, хотя работа идёт.</li>
+</ul>
+<p>Почему njs работает быстро?</p>
+<ul>
+<li>Компиляция в байт-код при старте nginx.</li>
+<li>Новая VM клонируется для каждого запроса (copy-on-write).</li>
+<li>Нет JIT-компиляции.</li>
+<li>Нет сборки мусора.
+Она не нужна, потому что для каждого запроса мы создаём
+маленькую VM, которая не успевает создать много объектов.</li>
+</ul>
+<p>Бенчмарк: создаём пустые контексты запроса на основе каждого из интерпретаторов.
+График логарифмический!</p>
+<p><img src="../../../images/highload19/njs-nginx-02.png" alt="njs-nginx-2"></p>
+<h1 id="njs-в-nginx">njs в nginx</h1>
+<h2 id="начало-работы">Начало работы</h2>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">apt-get install nginx nginx-module-njs
+</code></pre></div><p>Пример в докере: <a href="github.com/xeioex/njs-examples">https://github.com/xeioex/njs-examples</a></p>
+<h2 id="напишем-hello-world">Напишем hello world</h2>
+<p>nginx.conf:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-nginx" data-lang="nginx"><span style="color:#75715e">#Сначала загрузим с помощью директивы `load_module`
+</span><span style="color:#75715e"></span>
+<span style="color:#66d9ef">load_module</span>
+<span style="color:#e6db74">modules/ngx</span><span style="color:#e6db74">_http_js_module.so</span>;
+<span style="color:#75715e">#...
+</span><span style="color:#75715e"></span>
+<span style="color:#66d9ef">http</span> {
+    <span style="color:#75715e"># Директива `js_include` добавляет код из `example.njs`.
+</span><span style="color:#75715e"></span>    <span style="color:#f92672">js_include</span> <span style="color:#e6db74">example.njs</span>;
+    
+    <span style="color:#f92672">server</span> {
+        <span style="color:#f92672">listen</span> <span style="color:#ae81ff">8000</span>;
+        
+        <span style="color:#f92672">location</span> <span style="color:#e6db74">/hello</span> {
+            <span style="color:#75715e"># Директива `js_content` указывает на имя функции, которая должна вернуть ответ.
+</span><span style="color:#75715e"></span>            <span style="color:#f92672">js_content</span> <span style="color:#e6db74">hello</span>;
+        }
+<span style="color:#75715e">#...
+</span></code></pre></div><p>Код обработчика в example.njs:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-javascript" data-lang="javascript"><span style="color:#66d9ef">function</span>  <span style="color:#a6e22e">hello</span>(<span style="color:#a6e22e">r</span>) {
+    <span style="color:#a6e22e">r</span>.<span style="color:#66d9ef">return</span>(<span style="color:#ae81ff">200</span>, <span style="color:#e6db74">&#34;Hello world!&#34;</span>);
+}
+</code></pre></div><h2 id="проксирование-запросов-с-заголовком-авторизации">Проксирование запросов с заголовком авторизации</h2>
+<p>Давайте сделаем что-нибудь поинтереснее.
+Будем проксировать запросы в S3 bucket на амазоне.</p>
+<p>aws-s3-njs.conf:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-nginx" data-lang="nginx"><span style="color:#75715e">#...
+</span><span style="color:#75715e"></span><span style="color:#75715e"># Вот это стандартные вещи, которые уже есть в nginx:
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">location</span> ~<span style="color:#e6db74">*</span> <span style="color:#e6db74">^/s3/(.*)</span> {
+    <span style="color:#f92672">set</span> $bucket     <span style="color:#e6db74">&#39;test-bucket&#39;</span>;
+    <span style="color:#f92672">set</span> $aws_access <span style="color:#e6db74">&#39;...&#39;</span>;
+    <span style="color:#f92672">set</span> $aws_secret <span style="color:#e6db74">&#39;...&#39;</span>;
+    
+    <span style="color:#f92672">proxy_set_header</span>    <span style="color:#e6db74">Host</span> $bucket.s3.amazonaws.com;
+    <span style="color:#f92672">proxy_pass</span>          <span style="color:#e6db74">http://s3.amazonaws.com</span>;
+    
+    <span style="color:#75715e"># Но нам ещё нужно вычислить два заголовка:
+</span><span style="color:#75715e"></span>    <span style="color:#75715e"># тут будет дата в специальном формате
+</span><span style="color:#75715e"></span>    <span style="color:#f92672">proxy_set_header</span>    <span style="color:#e6db74">x-amz-date</span> $now;
+    <span style="color:#75715e"># А тут подписать своим ключом путь, на который мы хотим пойти
+</span><span style="color:#75715e"></span>    <span style="color:#f92672">proxy_set_header</span>    <span style="color:#e6db74">Authorization</span> <span style="color:#e6db74">&#34;GET</span> $aws_access:$aws_sign&#34;;
+}   
+</code></pre></div><p>И теперь в начало <code>aws-s3-njs.conf</code> мы добавляем такое:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-nginx" data-lang="nginx"><span style="color:#66d9ef">js_set</span> $now <span style="color:#e6db74">now</span>;
+<span style="color:#66d9ef">js_wet</span> $aws_sign <span style="color:#e6db74">aws_sign</span>;
+<span style="color:#75715e">#...
+</span></code></pre></div><p>Эти директивы связывают переменные в конфиге nginx с кодом на JS:</p>
+<p>aws-s3-njs.njs:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-javascript" data-lang="javascript"><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">now</span>(<span style="color:#a6e22e">r</span>) {
+    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">new</span> Date().<span style="color:#a6e22e">toISOString</span>().<span style="color:#a6e22e">replace</span>(<span style="color:#e6db74">/[:\-]|\.\d{3}/g</span>, <span style="color:#e6db74">&#39;&#39;</span>);
+}
+
+<span style="color:#66d9ef">function</span> <span style="color:#a6e22e">aws_sign</span>(<span style="color:#a6e22e">r</span>) {
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">v</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">variables</span>;
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">to_sign</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">`</span><span style="color:#e6db74">GET</span><span style="color:#960050;background-color:#1e0010">\</span><span style="color:#e6db74">n</span><span style="color:#960050;background-color:#1e0010">\</span><span style="color:#e6db74">n</span><span style="color:#960050;background-color:#1e0010">\</span><span style="color:#e6db74">n</span><span style="color:#960050;background-color:#1e0010">\</span><span style="color:#e6db74">nx-amz-date:</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">now</span><span style="color:#e6db74">}</span><span style="color:#960050;background-color:#1e0010">\</span><span style="color:#e6db74">n/</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">bucket</span><span style="color:#e6db74">}</span><span style="color:#e6db74">/</span><span style="color:#e6db74">${</span><span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">path</span><span style="color:#e6db74">}</span><span style="color:#e6db74">`</span>;
+    
+    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">require</span>(<span style="color:#e6db74">&#39;crypto&#39;</span>).<span style="color:#a6e22e">createHmac</span>(<span style="color:#e6db74">&#39;sha1&#39;</span>, <span style="color:#a6e22e">v</span>.<span style="color:#a6e22e">aws</span>.<span style="color:#a6e22e">secret</span>)
+                            .<span style="color:#a6e22e">update</span>(<span style="color:#a6e22e">to_sign</span>).<span style="color:#a6e22e">digest</span>(<span style="color:#e6db74">&#39;base64&#39;</span>);
+}
+</code></pre></div><p>Ура, мы сделали подписанный заголовок авторизации.</p>
+<h2 id="сложные-редиректы">Сложные редиректы</h2>
+<p>nginx.conf:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-nginx" data-lang="nginx"><span style="color:#66d9ef">location</span> <span style="color:#e6db74">/</span> {
+    <span style="color:#f92672">auth_request</span> <span style="color:#e6db74">/resolv</span>;
+    <span style="color:#f92672">auth_request_set</span> $route $sent_http_route;
+    <span style="color:#f92672">proxy_pass</span> <span style="color:#e6db74">http://backend</span>$route$is_args$args;
+}
+
+<span style="color:#66d9ef">location</span> = <span style="color:#e6db74">/resolv</span> {
+    <span style="color:#f92672">internal</span>;
+    <span style="color:#f92672">js_content</span> <span style="color:#e6db74">resolv</span>;
+}
+
+<span style="color:#66d9ef">location</span> = <span style="color:#e6db74">/_add</span> {
+    <span style="color:#f92672">allow</span> <span style="color:#ae81ff">127</span><span style="color:#e6db74">.0.0.1</span>;
+    <span style="color:#f92672">deny</span> <span style="color:#e6db74">all</span>;
+    <span style="color:#f92672">js_content</span> <span style="color:#e6db74">add</span>;
+}
+</code></pre></div><p>И такой complex_redirects.js:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-javascript" data-lang="javascript"><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">resolv</span>(<span style="color:#a6e22e">r</span>) {
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">map</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">open_db</span>();
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">mapped_uri</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">map</span>[<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">uri</span>];
+    <span style="color:#75715e">// ...
+</span><span style="color:#75715e"></span>    <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">headersOut</span>[<span style="color:#e6db74">&#39;Route&#39;</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">mapped_uri</span> <span style="color:#f92672">?</span> <span style="color:#a6e22e">mapped_uri</span> <span style="color:#f92672">:</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">uri</span>
+    <span style="color:#a6e22e">r</span>.<span style="color:#66d9ef">return</span>(<span style="color:#ae81ff">200</span>);  
+}
+<span style="color:#75715e">// пополняем map с парами редиректов
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">function</span> <span style="color:#a6e22e">add</span>(<span style="color:#a6e22e">r</span>) {
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">body</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">requestBody</span>;
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">pair</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">JSON</span>.<span style="color:#a6e22e">parse</span>(<span style="color:#a6e22e">body</span>);
+    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">pair</span>.<span style="color:#a6e22e">from</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">pair</span>.<span style="color:#a6e22e">to</span>) {
+        <span style="color:#a6e22e">r</span>.<span style="color:#66d9ef">return</span>(<span style="color:#ae81ff">400</span>, <span style="color:#e6db74">&#34;invalid request: ...&#34;</span>);
+        <span style="color:#66d9ef">return</span>;
+    }
+    
+    <span style="color:#66d9ef">var</span> <span style="color:#a6e22e">map</span> <span style="color:#f92672">=</span> <span style="color:#a6e22e">open_db</span>();
+    <span style="color:#75715e">// ...
+</span><span style="color:#75715e"></span>    <span style="color:#a6e22e">map</span>[<span style="color:#a6e22e">pair</span>.<span style="color:#a6e22e">from</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">pair</span>.<span style="color:#a6e22e">to</span>;
+    
+    <span style="color:#a6e22e">r</span>.<span style="color:#66d9ef">return</span>(<span style="color:#a6e22e">commit_db</span>(<span style="color:#a6e22e">map</span>));
+}
+</code></pre></div><h2 id="отладка">Отладка</h2>
+<p>Для отладки используем докер:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">docker run -i -t nginx:mainline /usr/bin/njs
+</code></pre></div><h2 id="что-уже-есть-в-интерпретаторе">Что уже есть в интерпретаторе</h2>
+<ul>
+<li>ES5.1:
+<ul>
+<li>Object, Array, Number, String, Date, Regexp, Function, JSON</li>
+<li>exceptions</li>
+<li>closures, anonymous functions</li>
+</ul>
+</li>
+<li>
+<blockquote>
+<p>= ES6:</p>
+</blockquote>
+<ul>
+<li>modules,</li>
+<li>arrow functions — скоро будет</li>
+</ul>
+</li>
+<li>Extra, OS:
+<ul>
+<li>crypto, files ops and more</li>
+</ul>
+</li>
+</ul>
+<h2 id="ближайшие-планы">Ближайшие планы</h2>
+<ul>
+<li>Писать код на JS прямо в конфиге nginx, без <code>js_include</code>.</li>
+<li>Развитие функциональность модулей.</li>
+<li>Расширение поддержки стандартов ECMAScript.</li>
+</ul>
+<h1 id="ссылки">Ссылки</h1>
+<p>Репозиторий: <a href="https://github.com/nginx/njs">github.com/nginx/njs</a></p>
+<p>Написать автору вопрос или устроиться на работу в команду njs:</p>
+<p><img src="../../../images/highload19/njs-nginx-03.png" alt="njs-nginx-03"></p>
+
+
+		
+	</div>
+
+	<div class="pagination">
+		<a href="/conf/knowledgeconf/19/trello-kb/" class="left arrow">&#8592;</a>
+		<a href="/conf/highload/18/2.5-make-your-database-dream-of-electric-sheep/" class="right arrow">&#8594;</a>
+
+		<a href="#" class="top">Top</a>
+	</div>
+</main>
+
+
+        		<footer>
+			<span>
+			&copy; <time datetime="2020-02-11 18:17:14.931367632 &#43;0700 &#43;07 m=&#43;0.151187680">2020</time> . Made with <a href='https://gohugo.io'>Hugo</a> using the <a href='https://github.com/EmielH/tale-hugo/'>Tale</a> theme.
+			</span>
+		</footer>
+
+    </body>
+</html>
